@@ -4,3 +4,4 @@ scikit-learn>=1.4,<2
 imbalanced-learn>=0.12,<1
 xgboost>=2,<4
 shap>=0.45,<1
+matplotlib>=3.7,<4
