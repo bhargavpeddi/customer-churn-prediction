@@ -1,6 +1,6 @@
 # Customer Churn Prediction
 
-XGBoost model that predicts which telecom customers will cancel, with SMOTE for class imbalance and SHAP to explain the predictions.
+XGBoost model that predicts which telecom customers will cancel, trained on the public IBM Telco Customer Churn dataset (7,043 customers), with SHAP to explain the predictions.
 
 📝 Write-up on Medium: [Predicting Customer Churn Without Fooling Yourself](https://medium.com/@bhargavpeddi/predicting-customer-churn-without-fooling-yourself-smote-xgboost-and-shap-0f65369e73d6)
 
@@ -8,20 +8,22 @@ XGBoost model that predicts which telecom customers will cancel, with SMOTE for 
 
 ## Results
 
-Seed 42, 7,043 customers, stratified 80/20 split, 16.1% of customers churn.
+Stratified 80/20 split, seed 42. Tuned with 5-fold cross-validation on the 5,634 training customers; the 1,409 test customers were scored once at the end.
 
-| Metric | Value |
+| Metric (test set) | Value |
 | --- | --- |
-| Churners caught (recall) | 61.7% |
-| Churners in the top 20% of risk scores | 47.6% (2.4x lift over random) |
-| Holdout ROC-AUC | 0.7497 |
-| Cross-validation ROC-AUC (train) | 0.7523 |
-| Precision at 0.5 threshold | 31.9% |
-| Accuracy | 72.6% |
+| Accuracy | **80.1%** |
+| ROC-AUC | **0.85** |
+| Churners in the top 20% of risk scores | 50.3% (2.5x lift over random) |
+| Precision at 0.5 threshold | 65.9% |
+| Recall at 0.5 threshold | 51.6% |
+| Cross-validation accuracy (train) | 80.7% |
 
-Recall and top-20% capture are the numbers that matter for retention: a team calling the 20% highest-risk customers reaches almost half of everyone who would churn. Accuracy is a poor metric here, because predicting "nobody churns" already scores 83.9%; SMOTE deliberately trades some accuracy for catching more churners. CV and holdout ROC-AUC are within 0.003 of each other, so the model is not overfitting.
+26.5% of customers churn, so predicting "nobody churns" scores 73.5%. The model beats that by 6.6 points, and the cross-validation and test accuracy are within a point of each other, so it isn't overfitting.
 
-Monthly charges, autopay, and tenure have the largest SHAP impact.
+**SMOTE comparison.** Retraining the same model with SMOTE inside the pipeline raises recall from 51.6% to 60.7% but lowers precision from 65.9% to 60% and accuracy to 78.9%. The final model skips SMOTE; if a retention offer is cheap, the SMOTE version (or a lower threshold) is the better choice because it catches more churners.
+
+**What drives churn (SHAP):** tenure, contract length (two-year and one-year contracts pull risk down), fiber optic internet, and paying by electronic check.
 
 | Cumulative gains | Confusion matrix (threshold 0.5) |
 | --- | --- |
@@ -29,14 +31,16 @@ Monthly charges, autopay, and tenure have the largest SHAP impact.
 
 ## Data
 
-`generate_data.py` builds a seeded dataset with a standard telecom schema: tenure, monthly charges, support tickets, late payments, contract length, fiber, autopay, and streaming services. I used generated data because the customer data I've worked with can't be published. The same seed always produces the same rows, so the numbers above are reproducible.
+[IBM Telco Customer Churn](https://github.com/IBM/telco-customer-churn-on-icp4d) (Apache 2.0), included in `data/` so the project runs offline. One row per customer: demographics, tenure, contract, billing, charges, subscribed services, and whether they churned. See `data/SOURCE.md`.
+
+Cleaning: 11 customers with zero tenure have a blank `TotalCharges` because they haven't been billed yet; those are set to 0, and the loader fails if a blank shows up for anyone else.
 
 ## How it works
 
-1. Validate the schema: required columns, no missing values, unique customer IDs, binary target.
-2. Split off a stratified 20% holdout before any fitting.
-3. Tune XGBoost with `RandomizedSearchCV` on the training set. SMOTE sits inside the pipeline, so oversampled rows never reach a validation fold.
-4. Score the holdout once, then compute mean absolute SHAP values on a holdout sample.
+1. `prepare.py` validates the file (unique IDs, Yes/No target), fixes the blank charges, one-hot encodes categories, and adds two features: average monthly spend and number of add-on services.
+2. Split off a stratified 20% test set before any fitting.
+3. `train.py` tunes XGBoost with a 40-candidate randomized search and 5-fold CV on the training split.
+4. Score the test set once, compare against a SMOTE variant, and compute mean absolute SHAP values on 500 test customers.
 
 ## Run it
 
@@ -44,17 +48,14 @@ Python 3.9+. On macOS, XGBoost needs OpenMP: `brew install libomp`.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python generate_data.py
-python train.py            # writes outputs/metrics.json (incl. recall, lift) and outputs/feature_impact.csv
-python make_charts.py      # writes the charts in docs/ (needs matplotlib)
+pip install -r requirements.txt matplotlib
+python train.py            # about a minute; writes outputs/metrics.json, feature_impact.csv, holdout_scores.csv
+python make_charts.py      # writes the charts in docs/
 python -m unittest -v
 ```
-
-`python train.py --help` lists options for the data path, row count, seed, and output folder.
 
 ## Next steps
 
 - Time-based validation instead of a random split
 - Probability calibration so scores can drive retention budgets
-- Drift monitoring on the input features
+- Choose the threshold from the cost of a retention offer versus the value of a saved customer

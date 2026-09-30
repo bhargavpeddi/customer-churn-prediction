@@ -1,22 +1,42 @@
+import tempfile
 import unittest
+from pathlib import Path
 
-from generate_data import FEATURES, make_rows
+import pandas as pd
+
+from prepare import DATA_PATH, features, load
 
 
-class SyntheticDataTests(unittest.TestCase):
-    def test_reproducible_and_unique(self):
-        rows = make_rows(500, seed=12)
-        self.assertEqual(rows, make_rows(500, seed=12))
-        self.assertEqual(len({row["customer_id"] for row in rows}), 500)
+class TelcoDataTests(unittest.TestCase):
+    def test_loads_all_customers_with_binary_target(self):
+        frame = load()
+        self.assertEqual(len(frame), 7043)
+        self.assertFalse(frame["customerID"].duplicated().any())
+        self.assertEqual(set(frame["Churn"]), {"Yes", "No"})
 
-    def test_schema_and_classes(self):
-        rows = make_rows(500, seed=12)
-        self.assertEqual(set(rows[0]), {"customer_id", *FEATURES, "churned"})
-        self.assertEqual({row["churned"] for row in rows}, {0, 1})
+    def test_blank_total_charges_only_for_new_customers(self):
+        raw = pd.read_csv(DATA_PATH)
+        blank = pd.to_numeric(raw["TotalCharges"], errors="coerce").isna()
+        self.assertEqual(int(blank.sum()), 11)
+        self.assertTrue((raw.loc[blank, "tenure"] == 0).all())
+        self.assertEqual(float(load().loc[blank, "TotalCharges"].sum()), 0.0)
 
-    def test_rejects_tiny_dataset(self):
-        with self.assertRaises(ValueError):
-            make_rows(9)
+    def test_features_are_numeric_with_no_missing_values(self):
+        x, y = features(load())
+        self.assertEqual(len(x), len(y))
+        self.assertFalse(x.isna().any().any())
+        self.assertIn("avg_monthly_spend", x)
+        self.assertTrue(x["add_on_services"].between(0, 6).all())
+        self.assertNotIn("customerID", x)
+
+    def test_rejects_duplicate_ids(self):
+        frame = pd.read_csv(DATA_PATH).head(20)
+        frame = pd.concat([frame, frame.head(1)])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "dupes.csv"
+            frame.to_csv(path, index=False)
+            with self.assertRaises(ValueError):
+                load(path)
 
 
 if __name__ == "__main__":

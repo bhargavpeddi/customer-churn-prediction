@@ -1,4 +1,4 @@
-"""Plot SHAP feature impact from outputs/feature_impact.csv. Run after train.py."""
+"""Charts from the train.py outputs: SHAP drivers, cumulative gains, confusion matrix."""
 
 import json
 from pathlib import Path
@@ -10,26 +10,42 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
+LABELS = {
+    "tenure": "Tenure (months)",
+    "Contract_Two year": "Two-year contract",
+    "Contract_One year": "One-year contract",
+    "InternetService_Fiber optic": "Fiber optic internet",
+    "PaymentMethod_Electronic check": "Pays by electronic check",
+    "PaperlessBilling_Yes": "Paperless billing",
+    "TotalCharges": "Total charges",
+    "MonthlyCharges": "Monthly charges",
+    "avg_monthly_spend": "Average monthly spend",
+    "add_on_services": "Number of add-on services",
+}
+
+
 def main(output_dir: Path = Path("outputs"), docs_dir: Path = Path("docs")) -> None:
-    impact = pd.read_csv(output_dir / "feature_impact.csv").head(6)[::-1]
-    metrics = json.loads((output_dir / "metrics.json").read_text())
+    impact = pd.read_csv(output_dir / "feature_impact.csv").head(8)[::-1]
+    test = json.loads((output_dir / "metrics.json").read_text())["test"]
     docs_dir.mkdir(exist_ok=True)
 
-    fig, ax = plt.subplots(figsize=(10, 5.5))
-    ax.barh(impact.feature, impact.mean_absolute_shap, color="#2f7fd8")
+    fig, ax = plt.subplots(figsize=(10, 6), facecolor=SURFACE)
+    style(ax)
+    names = [LABELS.get(f, f.replace("_", ": ")) for f in impact.feature]
+    ax.barh(names, impact.mean_absolute_shap, color=BLUE, height=0.6)
     for y, value in enumerate(impact.mean_absolute_shap):
-        ax.text(value + 0.01, y, f"{value:.3f}", va="center")
-    ax.set_title("SHAP feature impact (XGBoost)", loc="left", fontweight="bold")
-    ax.set_xlabel("Mean |SHAP value|")
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.grid(axis="x", alpha=0.3)
-    fig.text(
-        0.01, 0.01,
-        f"Catches {metrics['test_recall']:.0%} of churners | top 20% of scores hold {metrics['top20_churners_captured']:.0%} of them | ROC-AUC {metrics['test_roc_auc']:.2f}",
-        color="#4b5563",
-    )
+        ax.text(value + 0.008, y, f"{value:.2f}", va="center", color=INK, fontsize=10)
+    ax.set_xlim(0, impact.mean_absolute_shap.max() * 1.15)
+    ax.set_title("What drives churn: mean |SHAP value| on the test set", loc="left", fontweight="bold", color=INK)
+    ax.set_xlabel("Mean |SHAP value| (log-odds)", color=INK)
+    ax.tick_params(axis="y", colors=INK, length=0)
+    ax.grid(axis="x", alpha=0.6, color=GRID)
+    fig.text(0.01, 0.01,
+             f"IBM Telco data, 1,409-customer test set: accuracy {test['accuracy']:.1%} | ROC-AUC {test['roc_auc']:.2f} | "
+             f"top 20% of scores hold {test['top20_churners_captured']:.0%} of churners",
+             color=MUTED, fontsize=9.5)
     fig.tight_layout(rect=(0, 0.04, 1, 1))
-    fig.savefig(docs_dir / "shap_feature_impact.png", dpi=120)
+    fig.savefig(docs_dir / "shap_feature_impact.png", dpi=200)
     print(f"Wrote {docs_dir / 'shap_feature_impact.png'}")
 
 
