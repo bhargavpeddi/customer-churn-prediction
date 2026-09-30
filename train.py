@@ -16,7 +16,7 @@ def train(data_path: Path, output_dir: Path, seed: int = 42) -> dict[str, float 
     import shap
     from imblearn.over_sampling import SMOTE
     from imblearn.pipeline import Pipeline
-    from sklearn.metrics import accuracy_score, roc_auc_score
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, roc_auc_score
     from sklearn.model_selection import RandomizedSearchCV, train_test_split
     from xgboost import XGBClassifier
 
@@ -75,7 +75,21 @@ def train(data_path: Path, output_dir: Path, seed: int = 42) -> dict[str, float 
         "cv_roc_auc": round(float(search.best_score_), 4),
         "test_accuracy": round(float(accuracy_score(y_test, predictions)), 4),
         "test_roc_auc": round(float(roc_auc_score(y_test, probabilities)), 4),
+        "test_recall": round(float(recall_score(y_test, predictions)), 4),
+        "test_precision": round(float(precision_score(y_test, predictions)), 4),
+        "baseline_churn_rate": round(float(y_test.mean()), 4),
     }
+    # Retention teams work a ranked list, not a 0/1 label: how many of the actual
+    # churners fall in the top 20% of scores, and how that compares to random.
+    ranked = y_test.to_numpy()[np.argsort(-probabilities)]
+    top = ranked[: int(len(ranked) * 0.2)]
+    metrics["top20_churners_captured"] = round(float(top.sum() / ranked.sum()), 4)
+    metrics["top20_lift"] = round(float(top.mean() / ranked.mean()), 2)
+    # Per-customer holdout scores, used by make_charts.py for the gains curve and confusion matrix.
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"churned": y_test.to_numpy(), "score": probabilities.round(6)}).to_csv(
+        output_dir / "holdout_scores.csv", index=False
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     sample = x_test.sample(n=min(200, len(x_test)), random_state=seed)
     explainer = shap.TreeExplainer(search.best_estimator_.named_steps["model"])

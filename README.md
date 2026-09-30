@@ -2,20 +2,30 @@
 
 XGBoost model that predicts which telecom customers will cancel, with SMOTE for class imbalance and SHAP to explain the predictions.
 
+📝 Write-up on Medium: [Predicting Customer Churn Without Fooling Yourself](https://medium.com/@bhargavpeddi/predicting-customer-churn-without-fooling-yourself-smote-xgboost-and-shap-0f65369e73d6)
+
 ![SHAP feature impact](docs/shap_feature_impact.png)
 
 ## Results
 
-Seed 42, 7,043 customers, stratified 80/20 split.
+Seed 42, 7,043 customers, stratified 80/20 split, 16.1% of customers churn.
 
 | Metric | Value |
 | --- | --- |
-| Cross-validation ROC-AUC (train) | 0.7523 |
+| Churners caught (recall) | 61.7% |
+| Churners in the top 20% of risk scores | 47.6% (2.4x lift over random) |
 | Holdout ROC-AUC | 0.7497 |
-| Holdout accuracy | 72.6% |
-| Train / holdout rows | 5,634 / 1,409 |
+| Cross-validation ROC-AUC (train) | 0.7523 |
+| Precision at 0.5 threshold | 31.9% |
+| Accuracy | 72.6% |
 
-CV and holdout scores are within 0.003 of each other, so the model is not overfitting the training folds. Monthly charges, autopay, and tenure have the largest SHAP impact.
+Recall and top-20% capture are the numbers that matter for retention: a team calling the 20% highest-risk customers reaches almost half of everyone who would churn. Accuracy is a poor metric here, because predicting "nobody churns" already scores 83.9%; SMOTE deliberately trades some accuracy for catching more churners. CV and holdout ROC-AUC are within 0.003 of each other, so the model is not overfitting.
+
+Monthly charges, autopay, and tenure have the largest SHAP impact.
+
+| Cumulative gains | Confusion matrix (threshold 0.5) |
+| --- | --- |
+| ![Cumulative gains](docs/gains_curve.png) | ![Confusion matrix](docs/confusion_matrix.png) |
 
 ## Data
 
@@ -36,8 +46,8 @@ Python 3.9+. On macOS, XGBoost needs OpenMP: `brew install libomp`.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python generate_data.py
-python train.py            # writes outputs/metrics.json and outputs/feature_impact.csv
-python make_charts.py      # writes docs/shap_feature_impact.png (needs matplotlib)
+python train.py            # writes outputs/metrics.json (incl. recall, lift) and outputs/feature_impact.csv
+python make_charts.py      # writes the charts in docs/ (needs matplotlib)
 python -m unittest -v
 ```
 
